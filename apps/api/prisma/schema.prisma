@@ -16,6 +16,10 @@ enum Role {
   TECHNICAL_ADMIN
 }
 
+enum OtpChannel {
+  PHONE
+}
+
 model School {
   id        String   @id @default(uuid())
   name      String
@@ -38,17 +42,43 @@ model Cohort {
 }
 
 model User {
-  id                  String   @id @default(uuid())
-  name                String
-  phone               String   @unique
+  id                  String         @id @default(uuid())
+  name                String?
+  phone               String         @unique
   ageBand             String?
-  role                Role     @default(STUDENT)
+  role                Role           @default(STUDENT)
   cohortId            String?
-  cohort              Cohort?  @relation(fields: [cohortId], references: [id])
-  lifetimeGreenPoints Int      @default(0)
-  greenPointBalance   Int      @default(0)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  cohort              Cohort?        @relation(fields: [cohortId], references: [id])
+  lifetimeGreenPoints Int            @default(0)
+  greenPointBalance   Int            @default(0)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  refreshTokens       RefreshToken[]
 
   @@index([cohortId])
+}
+
+model OtpCode {
+  id         String     @id @default(uuid())
+  identifier String
+  channel    OtpChannel @default(PHONE)
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([identifier, createdAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
