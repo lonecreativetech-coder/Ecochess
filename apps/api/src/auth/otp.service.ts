@@ -4,14 +4,16 @@ import {
   Inject,
   Injectable,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { randomInt } from 'node:crypto';
+import { randomInt, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { hashOtp } from './hash.js';
 
 const OTP_TTL_SECONDS = 600;
 const MAX_REQUESTS = 3;
 const REQUEST_WINDOW_MS = 15 * 60 * 1000;
+const MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class OtpService {
@@ -55,5 +57,53 @@ export class OtpService {
 
     this.logger.warn(`DEV ONLY - OTP for ${phone}: ${code}`);
     return { expiresInSeconds: OTP_TTL_SECONDS };
+  }
+
+  async verifyCode(phone: string, code: string): Promise<void> {
+    const invalid = (): UnauthorizedException =>
+      new UnauthorizedException('Invalid or expired code.');
+
+    const record = await this.prisma.otpCode.findFirst({
+      where: { identifier: phone, consumedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!record || record.expiresAt.getTime() < Date.now()) {
+      throw invalid();
+    }
+
+    const claimed = await this.prisma.otpCode.updateMany({
+      where: {
+        id: record.id,
+        consumedAt: null,
+        attempts: { lt: MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    });
+    if (claimed.count === 0) {
+      throw invalid();
+    }
+
+    const expected = Buffer.from(record.codeHash, 'hex');
+    const actual = Buffer.from(hashOtp(phone, code), 'hex');
+    const matches =
+      expected.length === actual.length && timingSafeEqual(expected, actual);
+
+    if (!matches) {
+      if (record.attempts + 1 >= MAX_ATTEMPTS) {
+        await this.prisma.otpCode.updateMany({
+          where: { id: record.id, consumedAt: null },
+          data: { consumedAt: new Date() },
+        });
+      }
+      throw invalid();
+    }
+
+    const consumed = await this.prisma.otpCode.updateMany({
+      where: { id: record.id, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+    if (consumed.count === 0) {
+      throw invalid();
+    }
   }
 }
