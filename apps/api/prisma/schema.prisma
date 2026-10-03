@@ -6,3 +6,49 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  STUDENT
+  FACILITATOR
+  PROGRAM_ADMIN
+  OPERATIONS_ADMIN
+  CONTENT_ADMIN
+  TECHNICAL_ADMIN
+}
+
+model School {
+  id        String   @id @default(uuid())
+  name      String
+  location  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cohorts   Cohort[]
+}
+
+model Cohort {
+  id        String   @id @default(uuid())
+  name      String
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+
+  @@index([schoolId])
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  name                String
+  phone               String   @unique
+  ageBand             String?
+  role                Role     @default(STUDENT)
+  cohortId            String?
+  cohort              Cohort?  @relation(fields: [cohortId], references: [id])
+  lifetimeGreenPoints Int      @default(0)
+  greenPointBalance   Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([cohortId])
+}
