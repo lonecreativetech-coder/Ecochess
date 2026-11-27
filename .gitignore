@@ -143,3 +143,5 @@ vite.config.ts.timestamp-*
 .vite/
 
 apps/api/src/generated
+apps/api/dist-test
+apps/api/uploads

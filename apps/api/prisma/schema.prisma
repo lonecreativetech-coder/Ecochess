@@ -20,40 +20,151 @@ enum OtpChannel {
   PHONE
 }
 
+enum JoinCodeType {
+  SINGLE_USE
+  MULTI_USE
+}
+
+enum ConsentType {
+  MEDIA_CAPTURE
+  DATA_PROCESSING
+}
+
+enum ConsentCaptureMethod {
+  IN_APP_CHECKBOX
+  SIGNED_FORM_UPLOAD
+}
+
+enum LessonTrack {
+  CHESS_TACTICS
+  ECO_LITERACY
+}
+
+enum WasteLogStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EventType {
+  TOURNAMENT
+  CLEANUP
+  WORKSHOP
+}
+
+enum EventRegistrationStatus {
+  REGISTERED
+  CANCELLED
+  ATTENDED
+}
+
+enum BadgeCriteriaType {
+  LESSON_COUNT
+  WASTE_LOG_COUNT
+  STREAK_DAYS
+  RANK_REACHED
+  EVENT_ATTENDED
+}
+
+enum StreakFreezeStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+}
+
+enum NotificationType {
+  STREAK_REMINDER
+  RANK_UP
+  EVENT_ALERT
+  WASTE_LOG_STATUS
+  BADGE_EARNED
+}
+
+enum LeaderboardScope {
+  INDIVIDUAL
+  SCHOOL
+  COHORT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+}
+
 model School {
-  id        String   @id @default(uuid())
-  name      String
-  location  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  cohorts   Cohort[]
+  id           String        @id @default(uuid())
+  name         String
+  location     String?
+  lga          String?
+  state        String?
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  cohorts      Cohort[]
+  eventTargets EventTarget[]
 }
 
 model Cohort {
-  id        String   @id @default(uuid())
-  name      String
-  schoolId  String
-  school    School   @relation(fields: [schoolId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users     User[]
+  id              String              @id @default(uuid())
+  name            String
+  schoolId        String
+  school          School              @relation(fields: [schoolId], references: [id])
+  academicYear    String?
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  users           User[]
+  facilitators    CohortFacilitator[]
+  joinCodes       JoinCode[]
+  wasteLogEntries WasteLogEntry[]
+  eventTargets    EventTarget[]
 
   @@index([schoolId])
 }
 
+model CohortFacilitator {
+  cohortId   String
+  cohort     Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@id([cohortId, userId])
+  @@index([userId])
+}
+
 model User {
-  id                  String         @id @default(uuid())
-  name                String?
-  phone               String         @unique
-  ageBand             String?
-  role                Role           @default(STUDENT)
-  cohortId            String?
-  cohort              Cohort?        @relation(fields: [cohortId], references: [id])
-  lifetimeGreenPoints Int            @default(0)
-  greenPointBalance   Int            @default(0)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-  refreshTokens       RefreshToken[]
+  id                      String                   @id @default(uuid())
+  name                    String?
+  phone                   String                   @unique
+  ageBand                 String?
+  role                    Role                     @default(STUDENT)
+  cohortId                String?
+  cohort                  Cohort?                  @relation(fields: [cohortId], references: [id])
+  lifetimeGreenPoints     Int                      @default(0)
+  greenPointBalance       Int                      @default(0)
+  streakCount             Int                      @default(0)
+  streakLastDate          DateTime?
+  deletedAt               DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  refreshTokens           RefreshToken[]
+  facilitatorCohorts      CohortFacilitator[]
+  createdJoinCodes        JoinCode[]
+  consents                ConsentRecord[]
+  lessonCompletions       LessonCompletion[]
+  puzzleAttempts          PuzzleAttempt[]
+  wasteLogEntries         WasteLogEntry[]          @relation("StudentWasteLogs")
+  reviewedWasteLogs       WasteLogEntry[]          @relation("FacilitatorReviews")
+  createdEvents           Event[]
+  eventRegistrations      EventRegistration[]
+  badges                  UserBadge[]
+  streakFreezes           StreakFreeze[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  auditLogs               AuditLog[]
 
   @@index([cohortId])
 }
@@ -81,4 +192,254 @@ model RefreshToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+model JoinCode {
+  id          String       @id @default(uuid())
+  code        String       @unique
+  cohortId    String
+  cohort      Cohort       @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User         @relation(fields: [createdById], references: [id])
+  type        JoinCodeType @default(MULTI_USE)
+  maxUses     Int?
+  currentUses Int          @default(0)
+  expiresAt   DateTime
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+
+  @@index([cohortId])
+}
+
+model ConsentRecord {
+  id            String               @id @default(uuid())
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consentType   ConsentType
+  guardianName  String
+  guardianPhone String?
+  captureMethod ConsentCaptureMethod @default(IN_APP_CHECKBOX)
+  grantedAt     DateTime             @default(now())
+  revokedAt     DateTime?
+
+  @@index([userId, consentType])
+}
+
+model Lesson {
+  id             String             @id @default(uuid())
+  title          String
+  track          LessonTrack
+  order          Int
+  xpValue        Int                @default(50)
+  contentPayload Json
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  completions    LessonCompletion[]
+
+  @@index([track, order])
+}
+
+model LessonCompletion {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId    String
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  xpAwarded   Int
+  completedAt DateTime @default(now())
+
+  @@unique([userId, lessonId])
+  @@index([userId, completedAt])
+}
+
+model Puzzle {
+  id             String          @id @default(uuid())
+  title          String
+  difficultyTier Int             @default(1)
+  boardPosition  String
+  solution       Json
+  hintText       String
+  xpValue        Int             @default(25)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  attempts       PuzzleAttempt[]
+
+  @@index([difficultyTier])
+}
+
+model PuzzleAttempt {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  puzzleId    String
+  puzzle      Puzzle   @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+  moves       Json
+  isCorrect   Boolean
+  xpAwarded   Int      @default(0)
+  attemptedAt DateTime @default(now())
+
+  @@index([userId, puzzleId])
+}
+
+model WasteLogEntry {
+  id                String         @id @default(uuid())
+  userId            String
+  user              User           @relation("StudentWasteLogs", fields: [userId], references: [id], onDelete: Cascade)
+  cohortId          String
+  cohort            Cohort         @relation(fields: [cohortId], references: [id])
+  bagCount          Int
+  photoRef          String
+  status            WasteLogStatus @default(PENDING)
+  reviewNote        String?
+  resubmissionCount Int            @default(0)
+  reviewedById      String?
+  reviewedBy        User?          @relation("FacilitatorReviews", fields: [reviewedById], references: [id])
+  reviewedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([cohortId, status])
+  @@index([userId, status])
+}
+
+model Event {
+  id                   String              @id @default(uuid())
+  title                String
+  description          String?
+  type                 EventType
+  date                 DateTime
+  venue                String
+  maxCapacity          Int?
+  currentRegistrations Int                 @default(0)
+  targetAll            Boolean             @default(true)
+  createdById          String
+  createdBy            User                @relation(fields: [createdById], references: [id])
+  isActive             Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  targets              EventTarget[]
+  registrations        EventRegistration[]
+
+  @@index([type, date])
+}
+
+model EventTarget {
+  id       String  @id @default(uuid())
+  eventId  String
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  schoolId String?
+  school   School? @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  cohortId String?
+  cohort   Cohort? @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
+
+model EventRegistration {
+  id           String                  @id @default(uuid())
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId      String
+  event        Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status       EventRegistrationStatus @default(REGISTERED)
+  registeredAt DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+}
+
+model Badge {
+  id            String            @id @default(uuid())
+  slug          String            @unique
+  name          String
+  description   String
+  iconRef       String
+  criteriaType  BadgeCriteriaType
+  criteriaValue Int
+  createdAt     DateTime          @default(now())
+  userBadges    UserBadge[]
+}
+
+model UserBadge {
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId  String
+  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt DateTime @default(now())
+
+  @@id([userId, badgeId])
+}
+
+model StreakFreeze {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gpCost      Int
+  status      StreakFreezeStatus @default(AVAILABLE)
+  purchasedAt DateTime           @default(now())
+  usedOnDate  DateTime?
+  expiresAt   DateTime
+
+  @@index([userId, status])
+}
+
+model Notification {
+  id     String           @id @default(uuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   NotificationType
+  title  String
+  body   String
+  data   Json?
+  sentAt DateTime         @default(now())
+  readAt DateTime?
+
+  @@index([userId, readAt])
+}
+
+model NotificationPreference {
+  userId  String
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type    NotificationType
+  enabled Boolean          @default(true)
+
+  @@id([userId, type])
+}
+
+model LeaderboardEntry {
+  id         String           @id @default(uuid())
+  scope      LeaderboardScope
+  period     String
+  entityId   String
+  entityName String
+  xpTotal    Int
+  rank       Int
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([scope, period, entityId])
+  @@index([scope, period, rank])
+}
+
+model AuditLog {
+  id           String      @id @default(uuid())
+  entityType   String
+  entityId     String
+  action       AuditAction
+  actorId      String
+  actor        User        @relation(fields: [actorId], references: [id])
+  previousData Json?
+  newData      Json?
+  timestamp    DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, timestamp])
+}
+
+model AppConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }

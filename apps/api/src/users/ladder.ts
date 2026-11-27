@@ -1,10 +1,10 @@
-interface LadderStep {
+export interface LadderStep {
   tier: number;
   name: string;
   minPoints: number;
 }
 
-const LADDER: ReadonlyArray<LadderStep> = [
+export const LADDER: ReadonlyArray<LadderStep> = [
   { tier: 1, name: 'Sprout', minPoints: 0 },
   { tier: 2, name: 'Sapling', minPoints: 500 },
   { tier: 3, name: 'Dam Builder', minPoints: 1500 },
@@ -13,12 +13,26 @@ const LADDER: ReadonlyArray<LadderStep> = [
   { tier: 6, name: 'Ocean Guardian', minPoints: 13000 },
 ];
 
-export function rankFor(lifetimePoints: number): { tier: number; name: string } {
-  let current = LADDER[0];
-  for (const step of LADDER) {
-    if (lifetimePoints >= step.minPoints) {
-      current = step;
+export interface RankInfo {
+  tier: number;
+  name: string;
+  nextTier: { tier: number; name: string; minPoints: number } | null;
+}
+
+export function rankFor(lifetimePoints: number): RankInfo {
+  let currentIndex = 0;
+  for (let i = 0; i < LADDER.length; i++) {
+    if (lifetimePoints >= LADDER[i].minPoints) {
+      currentIndex = i;
     }
   }
-  return { tier: current.tier, name: current.name };
+  const current = LADDER[currentIndex];
+  const next = LADDER[currentIndex + 1] ?? null;
+  return {
+    tier: current.tier,
+    name: current.name,
+    nextTier: next
+      ? { tier: next.tier, name: next.name, minPoints: next.minPoints }
+      : null,
+  };
 }

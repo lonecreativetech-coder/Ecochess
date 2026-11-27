@@ -10,32 +10,64 @@ import { randomInt, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { hashOtp } from './hash.js';
 
-const OTP_TTL_SECONDS = 600;
-const MAX_REQUESTS = 3;
-const REQUEST_WINDOW_MS = 15 * 60 * 1000;
+const OTP_TTL_SECONDS = 300;
+const MAX_REQUESTS_PER_PHONE = 3;
+const PHONE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_REQUESTS_PER_IP = 10;
+const IP_WINDOW_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
+  private readonly ipHits = new Map<string, number[]>();
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async requestCode(phone: string): Promise<{ expiresInSeconds: number }> {
-    const since = new Date(Date.now() - REQUEST_WINDOW_MS);
+  private checkIpRateLimit(ip?: string): void {
+    if (!ip) return;
+    const now = Date.now();
+    const cutoff = now - IP_WINDOW_MS;
+    const recent = (this.ipHits.get(ip) ?? []).filter((ts) => ts >= cutoff);
+    if (recent.length >= MAX_REQUESTS_PER_IP) {
+      throw new HttpException(
+        {
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many requests from this IP. Please wait and try again.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    recent.push(now);
+    this.ipHits.set(ip, recent);
+  }
+
+  async requestCode(
+    phone: string,
+    ip?: string,
+  ): Promise<{ expiresInSeconds: number }> {
+    this.checkIpRateLimit(ip);
+
+    const since = new Date(Date.now() - PHONE_WINDOW_MS);
     const recent = await this.prisma.otpCode.count({
       where: { identifier: phone, createdAt: { gte: since } },
     });
-    if (recent >= MAX_REQUESTS) {
+    if (recent >= MAX_REQUESTS_PER_PHONE) {
       throw new HttpException(
-        'Too many code requests. Please wait and try again.',
+        {
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many code requests. Please wait and try again.',
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
     if (process.env.OTP_DELIVERY !== 'console') {
       throw new HttpException(
-        'OTP delivery is not configured.',
+        {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'OTP delivery is not configured.',
+        },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
